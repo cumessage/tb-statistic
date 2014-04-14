@@ -4,14 +4,8 @@ public class TBItemData extends TBData {
 
 	private static final String DB_TB_ITEM = "tb_item";
 	
-	private static TBItemData instance =  new TBItemData();
-	
-	public TBItemData() {
-		super();
-	}
-	
-	public static TBData getInstance() throws Exception {
-		return instance;
+	public TBItemData(DBConn dbConn) {
+		super(dbConn);
 	}
 	
 	public void insertList(String url) {
