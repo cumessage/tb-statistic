@@ -1,9 +1,11 @@
-package com.prosper.testtb;
+package com.prosper.testtb.data;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+
+import com.prosper.testtb.bean.TBListItem;
 
 public class TBListData extends TBData {
 
@@ -18,10 +20,10 @@ public class TBListData extends TBData {
 		String time = sdf.format(new Date());
 		String sql = 
 				"insert into " + DB_TB_LIST + 
-				"(url, state, is_root, ctime) " + 
-				"values('" + url + "', 1, 0, '" + time + "')";
+				"(url, state, ctime) " + 
+				"values('" + url + "', 0, '" + time + "')";
 		//System.out.println(sql);
-		super.insert(sql);
+		super.execute(sql);
 	}
 	
 	public int getCountByUrl(String url) throws SQLException {
@@ -29,6 +31,20 @@ public class TBListData extends TBData {
 		rs.next();
 		int count = rs.getInt(1);
 		return count;
+	}
+	
+	public TBListItem getByState(int state) throws SQLException {
+		ResultSet rs = super.get("select * from " + DB_TB_LIST + " where state = '" + state + "' limit 1");
+		if (rs.next()) {
+			return new TBListItem(rs.getInt(1), rs.getString(2));
+		} else {
+			return null;
+		}
+	}
+	
+	public void updateState(int id, int state) throws SQLException {
+		String sql = "update " + DB_TB_LIST + " set state = " + state + " where id = " + id;
+		super.execute(sql);
 	}
 	
 }

@@ -1,4 +1,4 @@
-package com.prosper.testtb;
+package com.prosper.testtb.data;
 
 import java.sql.Connection;
 import java.sql.DriverManager;

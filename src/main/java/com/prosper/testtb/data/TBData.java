@@ -1,4 +1,4 @@
-package com.prosper.testtb;
+package com.prosper.testtb.data;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -18,14 +18,9 @@ public class TBData {
 		return rs;
     }  
 	
-	public void update(String sql) throws SQLException {  
+	public void execute(String sql) throws SQLException {  
 		Statement st = (Statement) conn.createStatement();
 		int count = st.executeUpdate(sql);  
     }  
 	
-	public void insert(String sql) throws SQLException {
-		Statement st = (Statement) conn.createStatement();  
-		int count = st.executeUpdate(sql);    
-	}
-		
 }

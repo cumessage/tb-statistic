@@ -1,16 +1,26 @@
 package com.prosper.testtb;
 
 import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.sql.SQLException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.apache.http.client.ClientProtocolException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-public class Executor 
-{
+import com.prosper.testtb.bean.TBSystem;
+import com.prosper.testtb.data.DBConn;
+import com.prosper.testtb.data.TBListData;
+import com.prosper.testtb.data.TBPriceListData;
+import com.prosper.testtb.data.TBSystemData;
+
+public class Executor {
+	
+	private static Logger log = LogManager.getLogger(Executor.class); 
+	
 	private static final String LIST_SOURCE_URL = "http://list.taobao.com/browse/cat-0.htm";
-	private static final String LIST_PREFIX = "http://list.taobao.com/itemlist/default.htm?cat=";
-	private static final String LIST_REGEX = "http://list.taobao.com/itemlist/default.htm\\?.*?cat=(\\d*)";
+	
 	private static final String PRICE_APPEND = "";
 	private static final String PAGE_APPEND = "";
 
@@ -19,48 +29,61 @@ public class Executor
 	
 	private DBConn dbConn = DBConn.getInstance();
 	private TBListData tbListData = new TBListData(dbConn);
+	private TBPriceListData tbPriceListData = new TBPriceListData(dbConn);
+	private TBSystemData tbSystemData = new TBSystemData(dbConn);
 	
 	public void run() throws Exception {
 		try {
-			runForBaseListUrl(LIST_SOURCE_URL);
-			runForListUrl();
-			runForItemUrl();
-			runForItem();
+			log.info("begin ...");
+			TBSystem tbSystem = init();
+			if (tbSystem.getState() <= 0) {
+				runForBaseListUrl(LIST_SOURCE_URL);
+				tbSystemData.update(1);
+			} 
+			if (tbSystem.getState() <= 1) {
+				runForPriceListUrl();
+				//tbSystemData.update(2);
+			}
+			if (tbSystem.getState() <= 2) {
+				runForItemUrl();
+				//tbSystemData.update(3);
+			}
+			if (tbSystem.getState() <= 3) {
+				//runForItem();
+				//tbSystemData.update(4);
+			}
+			log.info("done");
 		} catch (Exception e) {
 			e.printStackTrace();
 			DBConn.close();
 		}
 	}
 	
-	public void runForBaseListUrl(String url) throws Exception {
-		String response = HttpUtil.getPage(url);
-		Pattern pattern = Pattern.compile(LIST_REGEX);
-		Matcher matcher = pattern.matcher(response);
-		int count = 0;
-		int insertedCount = 0;
-		while (matcher.find()) {
-			String listUrl = LIST_PREFIX + matcher.group(1);
-			if (tbListData.getCountByUrl(listUrl) == 0) {
-				tbListData.insertListUrl(listUrl);
-			} else {
-				System.out.println("inserted: " + listUrl);
-				insertedCount++;
-			}
-			count++;
+	private TBSystem init() throws SQLException {
+		TBSystem tbSystem = tbSystemData.get();
+		if (tbSystem == null) {
+			tbSystemData.insert(0);
+			tbSystem = tbSystemData.get();
 		}
-		System.out.print("count:" + count + ", inserted count:" + insertedCount);
+		return tbSystem;
 	}
 	
-	public void runForListUrl() throws Exception {
-		// match list regex
-		// insert list to db
+	public void runForBaseListUrl(String url) throws Exception {
+		new ListRunner().run(url);
+	}
+	
+	public void runForPriceListUrl() throws Exception {
+		ExecutorService threadPool = Executors.newCachedThreadPool();
+		for (int i = 0; i < 10; i++) {
+			threadPool.execute(new PriceListRunner("thread-" + i));
+		}
 	}
 	
 	public void runForItemUrl() throws Exception {
-		// get list form db
-		// for each list, get page
-		// match item regex
-		// insert item url to db
+		ExecutorService threadPool = Executors.newCachedThreadPool();
+		for (int i = 0; i < 2; i++) {
+			threadPool.execute(new ItemListRunner("thread-" + i));
+		}
 	}
 	
 	public void runForItem() throws Exception {
@@ -106,6 +129,7 @@ public class Executor
 	
 	public static void main(String[] args) throws Exception {
 		new Executor().run();
+		//(new PriceListRunner("1")).runForPriceListUrl("http://list.taobao.com/itemlist/default.htm?json=on&cat=50095933");
 	}
 
 }
