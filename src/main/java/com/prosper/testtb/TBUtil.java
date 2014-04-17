@@ -4,6 +4,8 @@ import java.sql.SQLException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -15,7 +17,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.prosper.testtb.data.DBConn;
 import com.prosper.testtb.data.TBFailedPageData;
-import com.prosper.testtb.data.TBListData;
+import com.prosper.testtb.exception.EmptyPageException;
 
 public class TBUtil {
 	
@@ -31,13 +33,23 @@ public class TBUtil {
 		HttpGet httpget = new HttpGet(url);
 		RequestConfig requestConfig = RequestConfig.custom().
 				setCircularRedirectsAllowed(true).
-				setSocketTimeout(1000).
-				setConnectTimeout(1000).
-				setConnectionRequestTimeout(1000).build();
+				setSocketTimeout(10000).
+				setConnectTimeout(10000).
+				//setProxy(new HttpHost("211.138.121.36", 81)).
+				setConnectionRequestTimeout(10000).build();
 		httpget.setConfig(requestConfig);
+		//httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
+		//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+		//httpget.setHeader(HttpHeaders.ACCEPT_ENCODING, "gzip,deflate,sdch");
+		//httpget.setHeader(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.8,en;q=0.6,it;q=0.4");
+		//httpget.setHeader(HttpHeaders.CACHE_CONTROL, "max-age=0");
+		//httpget.setHeader(HttpHeaders.HOST, "list.taobao.com");
+		//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+		//httpget.setHeader(HttpHeaders.PRAGMA, "no-cache");
 		
 		int reCount = 0;
 		boolean isDone = false;
+		boolean isEmpty = false;
 		String page = "";
 		while (reCount <= RETRY_COUNT && isDone == false) {
 			if (reCount > 0) {
@@ -49,10 +61,15 @@ public class TBUtil {
 				int status = response.getStatusLine().getStatusCode();
 				if (status != 200) {
 					throw new RuntimeException("http failed");
-				}
+				} 
+//				if (response.getEntity().getContentLength() == -1) {
+//					isEmpty = true;
+//					isDone = true;
+//				}
 
+				log.info("page length: " + response.getEntity().getContentLength());
 				try {
-					page = EntityUtils.toString(response.getEntity());
+					page = EntityUtils.toString(response.getEntity(), "gbk");
 					isDone = true;
 				} finally {
 					response.close();
@@ -60,6 +77,10 @@ public class TBUtil {
 			} catch(Exception e) {
 
 			}
+		}
+		
+		if (isEmpty) {
+			throw new EmptyPageException();
 		}
 		if (reCount > RETRY_COUNT && isDone == false) {
 			throw new RuntimeException("get page failed after retry for " + reCount + " times");
@@ -82,10 +103,11 @@ public class TBUtil {
 		Pattern pattern = Pattern.compile(regex);
 		Matcher matcher = pattern.matcher(content);
 		if (!matcher.find()) {
-			tbFailedPageData.insert(content);
-			throw new RuntimeException("match failed");
+			//tbFailedPageData.insert(content);
+			System.out.println(content);
+			throw new RuntimeException("match failed, regex: " + regex);
 		}
-		return matcher.group(1);
+		return matcher.group(1).trim();
 	}
 
 }

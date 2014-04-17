@@ -81,7 +81,7 @@ public class Executor {
 	
 	public void runForItemUrl() throws Exception {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
-		for (int i = 0; i < 2; i++) {
+		for (int i = 0; i < 10; i++) {
 			threadPool.execute(new ItemListRunner("thread-" + i));
 		}
 	}
@@ -130,6 +130,8 @@ public class Executor {
 	public static void main(String[] args) throws Exception {
 		new Executor().run();
 		//(new PriceListRunner("1")).runForPriceListUrl("http://list.taobao.com/itemlist/default.htm?json=on&cat=50095933");
+		//(new ItemListRunner("1")).getItemDetail(22874176428L);
+		//(new ItemListRunner("1")).getItemDetail(37299151517L);
 	}
 
 }

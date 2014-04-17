@@ -39,6 +39,11 @@ public class TBPriceListData extends TBData {
 		super.execute(sql);
 	}
 	
+	public void updateExePage(int id, int page) throws SQLException {
+		String sql = "update " + DB_TB_PRICE_LIST + " set exe_page = " + page + " where id = " + id;
+		super.execute(sql);
+	}
+	
 	public void deleteByUrl(String url) throws SQLException {
 		String sql = "delete from " + DB_TB_PRICE_LIST + " where url = '" + url + "'";
 		super.execute(sql);

@@ -1,18 +1,21 @@
 package com.prosper.testtb.bean;
 
 public class TBItem {
-
-	private String url;
 	
-	public TBItem(String url) {
-		setUrl(url);
-	}
+	public long itemId;
 
-	public String getUrl() {
-		return url;
-	}
+	public String url;
+	
+	public String title;
+	
+	public int price;
+	
+	public String shopLevel;
+	
+	public int trade_count;
+	
+	public int trade_succ_count;
+	
+	public int state;
 
-	public void setUrl(String url) {
-		this.url = url;
-	}
 }

@@ -18,9 +18,10 @@ public class TBData {
 		return rs;
     }  
 	
-	public void execute(String sql) throws SQLException {  
+	public int execute(String sql) throws SQLException {  
 		Statement st = (Statement) conn.createStatement();
 		int count = st.executeUpdate(sql);  
+		return count;
     }  
 	
 }
