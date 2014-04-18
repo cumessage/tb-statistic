@@ -16,7 +16,7 @@ public class TBPriceListData extends TBData {
 	}
 	
 	public TBPriceListItem getByState(int state) throws SQLException {
-		ResultSet rs = super.get("select * from " + DB_TB_PRICE_LIST + " where state = '" + state + "' limit 1");
+		ResultSet rs = super.get("select * from " + DB_TB_PRICE_LIST + " where state = '" + state + "' ORDER BY RAND() limit 1");
 		if (rs.next()) {
 			return new TBPriceListItem(rs.getInt(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5), rs.getInt(6),rs.getInt(7));
 		} else {

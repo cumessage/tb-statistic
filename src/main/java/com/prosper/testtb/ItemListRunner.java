@@ -2,7 +2,6 @@ package com.prosper.testtb;
 
 import java.sql.SQLException;
 import java.util.Iterator;
-import java.util.concurrent.BlockingQueue;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,6 +15,8 @@ import com.prosper.testtb.data.TBItemData;
 import com.prosper.testtb.data.TBPriceListData;
 import com.prosper.testtb.exception.EmptyPageException;
 import com.prosper.testtb.exception.ExecuteItemDetailException;
+import com.prosper.testtb.exception.FailedPageException;
+import com.prosper.testtb.exception.WrongPageException;
 
 public class ItemListRunner implements Runnable {
 
@@ -58,20 +59,27 @@ public class ItemListRunner implements Runnable {
 				String url = tbPriceListItem.getUrl();
 				int exePage = tbPriceListItem.getExePage();
 				int totalPage = tbPriceListItem.getTotalPage();
-				log.info(getName() + " proceeding: " + url + ", from " + exePage + " to " + totalPage);
+				int priceMin = tbPriceListItem.getPriceMin();
+				int priceMax = tbPriceListItem.getPriceMax();
+				log.info(getName() + " proceeding: " + url + ", price:" + priceMin + "-" 
+							+ priceMax + ", from " + exePage + " to " + totalPage);
 				
 				for(int processPage = exePage; processPage <= totalPage; processPage++) {
-					detail = tbPriceListItem.getUrl() + " page:" + processPage;
+					detail = tbPriceListItem.getUrl() + ", price:" + priceMin + "-" 
+							+ priceMax + ", page:" + processPage;
 					log.info(getName() + " proceeding: " + url + ", page: " + processPage);
 					int count = 0;
 					int offset = (processPage - 1) * page_size;
-					String exeUrl = url + "&s=" + offset;
+					String exeUrl = url + "&filter=reserve_price%5B" + priceMin + "%2C" + priceMax + "%5D" + "&s=" + offset;
 					String content = TBUtil.getPage(exeUrl);
 
 					ObjectMapper mapper = new ObjectMapper();
 					JsonNode rootNode = mapper.readTree(content);
 					
 					JsonNode itemListNode = rootNode.get("itemList");
+					if (itemListNode == null) {
+						throw new FailedPageException();
+					}
 					Iterator<JsonNode> iterator =  itemListNode.iterator();
 					
 					while (iterator.hasNext()) {
@@ -80,6 +88,7 @@ public class ItemListRunner implements Runnable {
 						log.info(getName() + " proceeded item: " + itemId);
 						
 						String itemUrl = itemNode.get("href").asText();
+						String shopUrl = itemNode.get("storeLink").asText();
 						if (!itemUrl.contains("item.taobao.com")) {
 							log.info("skip item from other site: " + itemUrl);
 							continue;
@@ -87,8 +96,12 @@ public class ItemListRunner implements Runnable {
 						TBItem tbItem = tbItemData.getById(itemId);
 						if (tbItem == null) {
 							try {
-								tbItem = getItemDetail(itemId);
+								tbItem = new TBItem();
+								tbItem = getShopLevel(shopUrl, tbItem);
+								tbItem = getItemDetail(itemId, tbItem);
+								tbItem.state = 1;
 							} catch(EmptyPageException e) {
+								log.warn("empty page, item id: " + itemId);
 								tbItem = new TBItem();
 								tbItem.shopLevel = "";
 								tbItem.trade_count = 0;
@@ -99,7 +112,6 @@ public class ItemListRunner implements Runnable {
 							tbItem.price = itemNode.get("price").asInt();
 							tbItem.url = itemNode.get("href").asText();
 							tbItem.itemId = itemId;
-							tbItem.state = 1;
 							tbItemData.insert(tbItem);
 							count ++;
 						}
@@ -114,6 +126,7 @@ public class ItemListRunner implements Runnable {
 				} else {
 					try {
 						tbPriceListData.updateState(id, 0);
+						log.error("update state to 0 successfully , id:" + id);
 					} catch (SQLException e1) {
 						log.error("update id error: id:" + id + " detail:" + detail);
 					}
@@ -124,50 +137,102 @@ public class ItemListRunner implements Runnable {
 		} 
 	}
 	
-	public TBItem getItemDetail(long id) throws ExecuteItemDetailException, EmptyPageException {
-		try {
-			String item_url = item_base_url + Long.toString(id);
-			String pageContent = TBUtil.getPage(item_base_url + Long.toString(id));
-			
-			System.out.println("url:" + item_url + " page" + pageContent);
-			
-			//String shopLevelRegex = "class=\"rank\"[^>]*?src=\"([^\"]*?)\"";
-			String[] shopLevelRegex = new String[]{
-					"(pics.taobaocdn.com/newrank/[^\"]*\")",
-					"shop-rank\\s*empty\">[^<]*<[^>]*>(\\d)*<"};
-
-			int shopLevelType = 0;
-			String shopLevel = null;
-			while (shopLevel == null && shopLevelType < shopLevelRegex.length) {
-				try {
-					shopLevel = TBUtil.getSingleMatchByString(shopLevelRegex[shopLevelType++], pageContent);
-				} catch (Exception e) {
-				}
+	public TBItem getShopLevel(String url, TBItem tbItem) throws WrongPageException {
+		String shopLevel = null;
+		String pageContent = null;
+		int retryMaxCount = 8;
+		int retryCount = 0;
+		while (shopLevel == null && retryCount <= retryMaxCount) {
+			if (retryCount > 0) {
+				log.info("retry " + retryCount + " for shop level");
 			}
-			
-			log.info("shop level: " + shopLevel);
-			
+			try {
+				pageContent = TBUtil.getPage(url);
+				
+				//System.out.println("url:" + item_url + " page" + pageContent);
+				//String shopLevelRegex = "class=\"rank\"[^>]*?src=\"([^\"]*?)\"";
+				String[] shopLevelRegex = new String[]{
+						"(pics.taobaocdn.com/newrank/[^\"]*\")",
+						"shop-rank\\s*empty\">[^<]*<[^>]*>(\\d)*<"};
+
+				int shopLevelType = 0;
+				while (shopLevel == null && shopLevelType < shopLevelRegex.length) {
+					try {
+						shopLevel = TBUtil.getSingleMatchByString(shopLevelRegex[shopLevelType++], pageContent);
+					} catch (Exception e) {
+						
+					}
+				}
+				retryCount++;
+			} catch (Exception e) {
+			}
+		}
+		
+		if (shopLevel == null) {
+			throw new WrongPageException();
+		}
+		tbItem.shopLevel = shopLevel;
+		log.info("shop level: " + shopLevel);
+		return tbItem;
+	}
+	
+	public TBItem getItemDetail(long id, TBItem tbItem) throws ExecuteItemDetailException, EmptyPageException {
+		try {
+//			String shopLevel = null;
+//			String pageContent = null;
+//			int retryMaxCount = 8;
+//			int retryCount = 0;
+//			while (shopLevel == null && retryCount <= retryMaxCount) {
+//				if (retryCount > 0) {
+//					log.info("retry " + retryCount + " for shop level");
+//					Thread.sleep(2000);
+//				}
+//				try {
+//					pageContent = TBUtil.getPage(item_base_url + Long.toString(id));
+//					
+//					//System.out.println("url:" + item_url + " page" + pageContent);
+//					//String shopLevelRegex = "class=\"rank\"[^>]*?src=\"([^\"]*?)\"";
+//					String[] shopLevelRegex = new String[]{
+//							"(pics.taobaocdn.com/newrank/[^\"]*\")",
+//							"shop-rank\\s*empty\">[^<]*<[^>]*>(\\d)*<"};
+//
+//					int shopLevelType = 0;
+//					while (shopLevel == null && shopLevelType < shopLevelRegex.length) {
+//						try {
+//							shopLevel = TBUtil.getSingleMatchByString(shopLevelRegex[shopLevelType++], pageContent);
+//						} catch (Exception e) {
+//							
+//						}
+//					}
+//					retryCount++;
+//				} catch (Exception e) {
+//				}
+//			}
+//			
+//			if (shopLevel == null) {
+//				throw new WrongPageException();
+//			}
+//			log.info("shop level: " + shopLevel);
+
+			String pageContent = TBUtil.getPage(item_base_url + Long.toString(id));
 			String saleUrlRegex = "\"apiItemInfo\":\\s*\"([^\"]*?)\"";
 			String saleUrl = TBUtil.getSingleMatchByString(saleUrlRegex, pageContent);
-			log.info("sale url: " + saleUrl);
 
 			String saleContent = TBUtil.getPage(saleUrl);
 			String tradeCountRegex = "quanity:\\s*(\\d*)";
 			String tradeSuccCountRegex = "confirmGoods:\\s*(\\d*)";
-			
+
 			int tradeCount = Integer.parseInt(TBUtil.getSingleMatchByString(tradeCountRegex, saleContent));
 			int tradeSuccCount = Integer.parseInt(TBUtil.getSingleMatchByString(tradeSuccCountRegex, saleContent));
-			
-			TBItem tbItem = new TBItem();
-			tbItem.shopLevel = shopLevel;
+
 			tbItem.trade_count = tradeCount;
 			tbItem.trade_succ_count = tradeSuccCount;
+			log.info("trade count: " + tradeCount + ", trade succ count: " + tradeSuccCount);
 			return tbItem;
 		} catch (EmptyPageException epe) {
 			log.error("get empty page, item id:" + id);
 			throw epe;
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			log.error("execute item failed, item id:" + id);
 			throw new ExecuteItemDetailException(e);
 		}

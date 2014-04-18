@@ -9,6 +9,7 @@ import org.apache.http.client.ClientProtocolException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.prosper.testtb.bean.TBItem;
 import com.prosper.testtb.bean.TBSystem;
 import com.prosper.testtb.data.DBConn;
 import com.prosper.testtb.data.TBListData;
@@ -74,14 +75,14 @@ public class Executor {
 	
 	public void runForPriceListUrl() throws Exception {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
-		for (int i = 0; i < 10; i++) {
+		for (int i = 1; i <= 10; i++) {
 			threadPool.execute(new PriceListRunner("thread-" + i));
 		}
 	}
 	
 	public void runForItemUrl() throws Exception {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
-		for (int i = 0; i < 10; i++) {
+		for (int i = 1; i <= 10; i++) {
 			threadPool.execute(new ItemListRunner("thread-" + i));
 		}
 	}
@@ -90,48 +91,10 @@ public class Executor {
 		
 	}
 	
-	public void testTB() throws ClientProtocolException, IOException, InterruptedException {
-//		RequestConfig requestConfig = RequestConfig.custom().setCircularRedirectsAllowed(true).build();
-//		long time = System.currentTimeMillis();
-//		long begin = 19423417866L;
-//		long end = begin;
-//		for (long id = begin; id < 29423418963L; id++) {
-//			end = id;
-//			HttpGet httpget = new HttpGet("http://item.taobao.com/item.htm?id=" + id);
-//			httpget.setConfig(requestConfig);
-//			CloseableHttpResponse response = httpclient.execute(httpget);
-//			int status = response.getStatusLine().getStatusCode();
-//			System.out.println(status + ", id:" + id);
-//			
-//			try {
-//				InputStream is = response.getEntity().getContent();
-//				StringBuffer sb = new StringBuffer();
-//				byte[] b = new byte[256];
-//				while (is.read(b) != -1) {
-//					sb.append(new String(b, Charset.forName("gbk")));
-//				}
-//				String body = sb.toString();
-//				if (body.contains("您查看的宝贝不存在"))
-//				System.out.println("index:" + body.indexOf("您查看的宝贝不存在"));
-////						replaceAll("script.*script", "").
-////						replaceAll("<.*?>", "").
-////						replaceAll("\\s+", " "));
-//			} finally {
-//				response.close();
-//			}
-////			if (System.currentTimeMillis() - time > 2000000000000000L) {
-////				break;
-////			}
-////			Thread.sleep(2000);
-//		}
-//		System.out.println(end - begin);
-	}
-	
 	public static void main(String[] args) throws Exception {
 		new Executor().run();
 		//(new PriceListRunner("1")).runForPriceListUrl("http://list.taobao.com/itemlist/default.htm?json=on&cat=50095933");
-		//(new ItemListRunner("1")).getItemDetail(22874176428L);
-		//(new ItemListRunner("1")).getItemDetail(37299151517L);
+		//(new ItemListRunner("1")).getItemDetail(37495393188L, new TBItem());
 	}
 
 }

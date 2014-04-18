@@ -32,13 +32,14 @@ public class TBUtil {
 	public static String getPage(String url) throws Exception {
 		HttpGet httpget = new HttpGet(url);
 		RequestConfig requestConfig = RequestConfig.custom().
-				setCircularRedirectsAllowed(true).
-				setSocketTimeout(10000).
-				setConnectTimeout(10000).
 				//setProxy(new HttpHost("211.138.121.36", 81)).
-				setConnectionRequestTimeout(10000).build();
+				setCircularRedirectsAllowed(true).
+				setSocketTimeout(1000).
+				setConnectTimeout(1000).
+				setConnectionRequestTimeout(1000).build();
 		httpget.setConfig(requestConfig);
-		//httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
+		httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
+		httpget.setHeader("Cookie", "cna=DtTXC5tUAAwCAdoetLN2hL2I;");
 		//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
 		//httpget.setHeader(HttpHeaders.ACCEPT_ENCODING, "gzip,deflate,sdch");
 		//httpget.setHeader(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.8,en;q=0.6,it;q=0.4");
@@ -66,10 +67,12 @@ public class TBUtil {
 //					isEmpty = true;
 //					isDone = true;
 //				}
-
-				log.info("page length: " + response.getEntity().getContentLength());
+				
 				try {
 					page = EntityUtils.toString(response.getEntity(), "gbk");
+					if (page.length() < 10) {
+						isEmpty = true;
+					}
 					isDone = true;
 				} finally {
 					response.close();
@@ -104,7 +107,7 @@ public class TBUtil {
 		Matcher matcher = pattern.matcher(content);
 		if (!matcher.find()) {
 			//tbFailedPageData.insert(content);
-			System.out.println(content);
+			//System.out.println(content);
 			throw new RuntimeException("match failed, regex: " + regex);
 		}
 		return matcher.group(1).trim();
