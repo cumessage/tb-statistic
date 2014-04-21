@@ -4,11 +4,15 @@ import java.sql.SQLException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.http.Header;
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
+import org.apache.http.client.CookieStore;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.impl.client.BasicCookieStore;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
@@ -18,6 +22,7 @@ import org.apache.logging.log4j.Logger;
 import com.prosper.testtb.data.DBConn;
 import com.prosper.testtb.data.TBFailedPageData;
 import com.prosper.testtb.exception.EmptyPageException;
+import com.prosper.testtb.exception.HttpException;
 
 public class TBUtil {
 	
@@ -26,20 +31,23 @@ public class TBUtil {
 	private static DBConn dbConn = DBConn.getInstance();
 	private static TBFailedPageData tbFailedPageData = new TBFailedPageData(dbConn);
 	
+	private static HttpProxy httpProxy = HttpProxy.getInstance();
 	private static final int RETRY_COUNT = 10;
-	private static CloseableHttpClient httpclient = HttpClients.createDefault();;
+	
+	private static CloseableHttpClient httpclient = HttpClients.createDefault();
 	
 	public static String getPage(String url) throws Exception {
+		String[] proxy = httpProxy.getProxy();
 		HttpGet httpget = new HttpGet(url);
 		RequestConfig requestConfig = RequestConfig.custom().
-				//setProxy(new HttpHost("211.138.121.36", 81)).
+				setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1]))).
 				setCircularRedirectsAllowed(true).
 				setSocketTimeout(1000).
 				setConnectTimeout(1000).
 				setConnectionRequestTimeout(1000).build();
 		httpget.setConfig(requestConfig);
 		httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
-		httpget.setHeader("Cookie", "cna=DtTXC5tUAAwCAdoetLN2hL2I;");
+		httpget.setHeader("Cookie", "cna=" + CookieRefresher.getInstance().getCna() + ";");
 		//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
 		//httpget.setHeader(HttpHeaders.ACCEPT_ENCODING, "gzip,deflate,sdch");
 		//httpget.setHeader(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.8,en;q=0.6,it;q=0.4");
@@ -57,28 +65,24 @@ public class TBUtil {
 				log.info("retry: " + reCount);
 			}
 			reCount++;
+			CloseableHttpResponse response = null;
 			try {
-				CloseableHttpResponse response = httpclient.execute(httpget);
+				response = httpclient.execute(httpget);
 				int status = response.getStatusLine().getStatusCode();
 				if (status != 200) {
 					throw new RuntimeException("http failed");
 				} 
-//				if (response.getEntity().getContentLength() == -1) {
-//					isEmpty = true;
-//					isDone = true;
-//				}
-				
-				try {
-					page = EntityUtils.toString(response.getEntity(), "gbk");
-					if (page.length() < 10) {
-						isEmpty = true;
-					}
-					isDone = true;
-				} finally {
+				page = EntityUtils.toString(response.getEntity(), "gbk");
+				if (page.length() < 10) {
+					isEmpty = true;
+				}
+				isDone = true;
+			} catch(Exception e) {
+				log.warn("get page failed" + e.getClass().getName());
+			} finally {
+				if(response != null) {
 					response.close();
 				}
-			} catch(Exception e) {
-
 			}
 		}
 		
@@ -86,9 +90,62 @@ public class TBUtil {
 			throw new EmptyPageException();
 		}
 		if (reCount > RETRY_COUNT && isDone == false) {
-			throw new RuntimeException("get page failed after retry for " + reCount + " times");
+			httpProxy.failProxy(proxy[0], Integer.parseInt(proxy[1]));
+			throw new HttpException("get page failed after retry for " + reCount + " times");
 		}
 		return page;
+	}
+	
+	public static Header[] getHeader(String url) throws Exception {
+		String[] proxy = httpProxy.getProxy();
+		HttpGet httpget = new HttpGet(url);
+		RequestConfig requestConfig = RequestConfig.custom().
+				setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1]))).
+				setCircularRedirectsAllowed(true).
+				setSocketTimeout(1000).
+				setConnectTimeout(1000).
+				setConnectionRequestTimeout(1000).build();
+		httpget.setConfig(requestConfig);
+		httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
+		
+		int reCount = 0;
+		boolean isDone = false;
+		boolean isEmpty = false;
+		Header[] header = null;
+		while (reCount <= RETRY_COUNT && isDone == false) {
+			if (reCount > 0) {
+				log.info("retry: " + reCount);
+			}
+			reCount++;
+			CloseableHttpResponse response = null;
+			try {
+				HttpClientContext context = HttpClientContext.create();
+				CookieStore cookieStore = new BasicCookieStore();
+				context.setCookieStore(cookieStore);
+				response = httpclient.execute(httpget, context);
+				int status = response.getStatusLine().getStatusCode();
+				if (status != 200) {
+					throw new RuntimeException("http failed");
+				} 
+				header = response.getAllHeaders();
+				isDone = true;
+			} catch(Exception e) {
+				log.warn("get page failed" + e.getClass().getName());
+			} finally {
+				if(response != null) {
+					response.close();
+				}
+			}
+		}
+		
+		if (isEmpty) {
+			throw new EmptyPageException();
+		}
+		if (reCount > RETRY_COUNT && isDone == false) {
+			httpProxy.failProxy(proxy[0], Integer.parseInt(proxy[1]));
+			throw new HttpException("get page failed after retry for " + reCount + " times");
+		}
+		return header;
 	}
 	
 	public static String getSingleMatchByHttp(String regex, String url) throws Exception {
