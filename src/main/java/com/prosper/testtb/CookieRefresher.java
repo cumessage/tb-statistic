@@ -8,7 +8,10 @@ public class CookieRefresher implements Runnable {
 
 	private static Logger log = LogManager.getLogger(CookieRefresher.class); 
 	
-	private static int interval = 10;
+	/**
+	 * refresh gap, unit: s
+	 */
+	private static int interval = 300;
 
 	private static final String url = "http://log.mmstat.com/1.gif?logtype=1&cache=fbfd20c&scr=1600x900&isbeta=7";
 
@@ -20,9 +23,7 @@ public class CookieRefresher implements Runnable {
 		return cr;
 	}
 	
-	private CookieRefresher() {
-		// TODO Auto-generated constructor stub
-	}
+	private CookieRefresher() {}
 
 	public void run() {
 		while(true) {
@@ -51,6 +52,7 @@ public class CookieRefresher implements Runnable {
 			if (cna == null) {
 				log.warn("refresh cookie failed");
 			} else {
+				this.cna = cna;
 				log.info("refresh cna done, cna: " + cna);
 			}
 

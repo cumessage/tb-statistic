@@ -37,30 +37,33 @@ public class TBUtil {
 	private static CloseableHttpClient httpclient = HttpClients.createDefault();
 	
 	public static String getPage(String url) throws Exception {
-		String[] proxy = httpProxy.getProxy();
+		String cna = CookieRefresher.getInstance().getCna();
+		String[] proxy = null;
 		HttpGet httpget = new HttpGet(url);
-		RequestConfig requestConfig = RequestConfig.custom().
-				setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1]))).
-				setCircularRedirectsAllowed(true).
-				setSocketTimeout(1000).
-				setConnectTimeout(1000).
-				setConnectionRequestTimeout(1000).build();
-		httpget.setConfig(requestConfig);
-		httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
-		httpget.setHeader("Cookie", "cna=" + CookieRefresher.getInstance().getCna() + ";");
-		//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
-		//httpget.setHeader(HttpHeaders.ACCEPT_ENCODING, "gzip,deflate,sdch");
-		//httpget.setHeader(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.8,en;q=0.6,it;q=0.4");
-		//httpget.setHeader(HttpHeaders.CACHE_CONTROL, "max-age=0");
-		//httpget.setHeader(HttpHeaders.HOST, "list.taobao.com");
-		//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
-		//httpget.setHeader(HttpHeaders.PRAGMA, "no-cache");
-		
+
 		int reCount = 0;
 		boolean isDone = false;
 		boolean isEmpty = false;
 		String page = "";
 		while (reCount <= RETRY_COUNT && isDone == false) {
+			proxy = httpProxy.getProxy();
+			RequestConfig requestConfig = RequestConfig.custom().
+					setProxy(new HttpHost(proxy[0], Integer.parseInt(proxy[1]))).
+					setCircularRedirectsAllowed(true).
+					setSocketTimeout(3000).
+					setConnectTimeout(3000).
+					setConnectionRequestTimeout(3000).build();
+			httpget.setConfig(requestConfig);
+			httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
+			httpget.setHeader("Cookie", "cna=" + cna + ";");
+			//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+			//httpget.setHeader(HttpHeaders.ACCEPT_ENCODING, "gzip,deflate,sdch");
+			//httpget.setHeader(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.8,en;q=0.6,it;q=0.4");
+			//httpget.setHeader(HttpHeaders.CACHE_CONTROL, "max-age=0");
+			//httpget.setHeader(HttpHeaders.HOST, "list.taobao.com");
+			//httpget.setHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+			//httpget.setHeader(HttpHeaders.PRAGMA, "no-cache");
+			
 			if (reCount > 0) {
 				log.info("retry: " + reCount);
 			}

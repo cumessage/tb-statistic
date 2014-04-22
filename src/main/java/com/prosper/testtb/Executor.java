@@ -1,15 +1,13 @@
 package com.prosper.testtb;
 
-import java.io.IOException;
 import java.sql.SQLException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-import org.apache.http.client.ClientProtocolException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.prosper.testtb.bean.TBItem;
 import com.prosper.testtb.bean.TBSystem;
 import com.prosper.testtb.data.DBConn;
 import com.prosper.testtb.data.TBListData;
@@ -37,21 +35,19 @@ public class Executor {
 		try {
 			log.info("begin ...");
 			TBSystem tbSystem = init();
+			prepare();
 			if (tbSystem.getState() <= 0) {
 				runForBaseListUrl(LIST_SOURCE_URL);
 				tbSystemData.update(1);
 			} 
 			if (tbSystem.getState() <= 1) {
 				runForPriceListUrl();
-				//tbSystemData.update(2);
 			}
 			if (tbSystem.getState() <= 2) {
-				runForItemUrl();
-				//tbSystemData.update(3);
+				runForItem();
 			}
 			if (tbSystem.getState() <= 3) {
-				//runForItem();
-				//tbSystemData.update(4);
+				runForFailedItem();
 			}
 			log.info("done");
 		} catch (Exception e) {
@@ -69,6 +65,13 @@ public class Executor {
 		return tbSystem;
 	}
 	
+	private void prepare() throws InterruptedException {
+		ExecutorService threadPool = Executors.newCachedThreadPool();
+		threadPool.execute(HttpProxy.getInstance());
+		threadPool.execute(CookieRefresher.getInstance());
+		Thread.sleep(30000);
+	}
+	
 	public void runForBaseListUrl(String url) throws Exception {
 		new ListRunner().run(url);
 	}
@@ -78,17 +81,26 @@ public class Executor {
 		for (int i = 1; i <= 10; i++) {
 			threadPool.execute(new PriceListRunner("thread-" + i));
 		}
+		threadPool.awaitTermination(30, TimeUnit.DAYS);
+		tbSystemData.update(2);
 	}
 	
-	public void runForItemUrl() throws Exception {
+	public void runForItem() throws Exception {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
 		for (int i = 1; i <= 10; i++) {
 			threadPool.execute(new ItemListRunner("thread-" + i));
 		}
+		threadPool.awaitTermination(30, TimeUnit.DAYS);
+		tbSystemData.update(3);
 	}
 	
-	public void runForItem() throws Exception {
-		
+	public void runForFailedItem() throws Exception {
+//		ExecutorService threadPool = Executors.newCachedThreadPool();
+//		for (int i = 1; i <= 10; i++) {
+//			threadPool.execute(new ItemListRunner("thread-" + i));
+//		}
+//		threadPool.awaitTermination(30, TimeUnit.DAYS);
+//		tbSystemData.update(4);
 	}
 	
 	public static void main(String[] args) throws Exception {

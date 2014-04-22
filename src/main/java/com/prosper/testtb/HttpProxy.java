@@ -20,6 +20,7 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -37,7 +38,7 @@ public class HttpProxy implements Runnable {
 	/**
 	 * 测试地址
 	 */
-	private static final String testUrl = "http://www.bing.com";
+	private static final String testUrl = "http://www.baidu.com";
 
 	/**
 	 * 最大失败次数
@@ -184,6 +185,12 @@ public class HttpProxy implements Runnable {
 			httpget.setConfig(requestConfig);
 			httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
 			response = httpclient.execute(httpget);
+			
+			String page = EntityUtils.toString(response.getEntity(), "gbk");
+			if (!page.contains("京ICP证030173号")) {
+				System.out.println(page);
+				throw new IOException("return wrong");
+			}
 		} finally {
 			if (response != null) {
 				response.close();
