@@ -167,7 +167,7 @@ public class TBUtil {
 		Matcher matcher = pattern.matcher(content);
 		if (!matcher.find()) {
 			//tbFailedPageData.insert(content);
-			//System.out.println(content);
+			System.out.println(content);
 			throw new RuntimeException("match failed, regex: " + regex);
 		}
 		return matcher.group(1).trim();

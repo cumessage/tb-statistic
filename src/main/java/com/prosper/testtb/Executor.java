@@ -78,7 +78,7 @@ public class Executor {
 	
 	public void runForPriceListUrl() throws Exception {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
-		for (int i = 1; i <= 10; i++) {
+		for (int i = 1; i <= 30; i++) {
 			threadPool.execute(new PriceListRunner("thread-" + i));
 		}
 		threadPool.awaitTermination(30, TimeUnit.DAYS);
@@ -87,7 +87,7 @@ public class Executor {
 	
 	public void runForItem() throws Exception {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
-		for (int i = 1; i <= 10; i++) {
+		for (int i = 1; i <= 30; i++) {
 			threadPool.execute(new ItemListRunner("thread-" + i));
 		}
 		threadPool.awaitTermination(30, TimeUnit.DAYS);

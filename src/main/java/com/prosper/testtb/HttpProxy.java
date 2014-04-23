@@ -100,7 +100,8 @@ public class HttpProxy implements Runnable {
 				if (ss.length < 2) {
 					continue;
 				}
-				Proxy proxy = new Proxy(ss[0], Integer.parseInt(ss[1]));
+				String[] pp = ss[1].split("@");
+				Proxy proxy = new Proxy(ss[0], Integer.parseInt(pp[0]));
 				if (blackList.contains(proxy.ip)) {
 					log.debug("proxy is in blacklist, proxy: " + proxy);
 					continue;
@@ -119,7 +120,7 @@ public class HttpProxy implements Runnable {
 					log.debug("proxy test failed, proxy: " + proxy);
 					continue;
 				}
-				proxyMap.put(new Proxy(ss[0], Integer.parseInt(ss[1])), 0);
+				proxyMap.put(new Proxy(ss[0], Integer.parseInt(pp[0])), 0);
 				log.debug("proxyMap add: " + proxy);
 				count ++;
 			}
@@ -188,7 +189,7 @@ public class HttpProxy implements Runnable {
 			
 			String page = EntityUtils.toString(response.getEntity(), "gbk");
 			if (!page.contains("京ICP证030173号")) {
-				System.out.println(page);
+				//System.out.println(page);
 				throw new IOException("return wrong");
 			}
 		} finally {

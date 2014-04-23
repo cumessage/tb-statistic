@@ -45,12 +45,17 @@ public class CookieRefresher implements Runnable {
 					}
 				}
 			} catch(Exception e) {
-				log.warn("refresh cookie failed");
 				e.printStackTrace();
 			}
 			
 			if (cna == null) {
 				log.warn("refresh cookie failed");
+				try {
+					Thread.sleep(5000);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				continue;
 			} else {
 				this.cna = cna;
 				log.info("refresh cna done, cna: " + cna);
