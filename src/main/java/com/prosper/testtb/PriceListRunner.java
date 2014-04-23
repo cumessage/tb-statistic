@@ -68,8 +68,8 @@ public class PriceListRunner implements Runnable {
 	public void runForPriceListUrl(String url) throws Exception {
 		int begin = 0, end = 1, lastUnReachPos = 0, lastReachedPos = 0, max = 100000000;
 		while (end <= max) {
-			log.info(name + " trying: min=" + begin + " max=" + end);
 			String exeUrl = url + "&filter=reserve_price%5B" + begin + "%2C" + end + "%5D";
+			log.info(name + " trying: min=" + begin + ", max=" + end + ", url" + exeUrl);
 			int totalPage = getTotalPage(exeUrl);
 			if (totalPage < 100) {
 				if (end == lastUnReachPos) {

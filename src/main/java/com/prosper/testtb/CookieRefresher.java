@@ -82,7 +82,7 @@ public class CookieRefresher implements Runnable {
 	
 	public static void main(String[] args) throws InterruptedException {
 		log.info("begin to run ...");
-		HttpProxy hp = HttpProxy.getInstance();
+		HttpProxyOld hp = HttpProxyOld.getInstance();
 		new Thread(hp).start();
 		
 		Thread.sleep(10000);

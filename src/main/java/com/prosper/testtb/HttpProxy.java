@@ -2,15 +2,22 @@ package com.prosper.testtb;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
@@ -24,12 +31,13 @@ import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.prosper.testtb.bean.Proxy;
 import com.prosper.testtb.exception.ProxyException;
 
 public class HttpProxy implements Runnable {
 
 	private static Logger log = LogManager.getLogger(HttpProxy.class); 
-
+	
 	/**
 	 * proxy文件地址
 	 */
@@ -38,49 +46,67 @@ public class HttpProxy implements Runnable {
 	/**
 	 * 测试地址
 	 */
-	private static final String testUrl = "http://www.baidu.com";
+	private static final String testUrl = "http://list.taobao.com/browse/cat-0.htm";
+
+	/**
+	 * 测试成功时, 包含的字符串
+	 */
+	private static final String succString = "<h4>女装男装</h4>";
+
+	/**
+	 * 被屏蔽时, 包含的字符串
+	 */
+	private static final String failedString = "";
 
 	/**
 	 * 最大失败次数
 	 */
-	private static final int maxFailCount = 5;
+	private static final int maxFailCount = 1;
 
 	/**
 	 * 最小代理运行数量
 	 */
-	private static final int minRunProxy = 10;
+	private static final int minRunProxy = 0;
 
 	/**
 	 * Unit: s
 	 */
-	private static final int refreshInterval = 120; 
+	private static final int refreshInterval = 15; 
 
-	private BlockingQueue<Proxy> proxyQueue = new LinkedBlockingQueue<Proxy>();
-
-	private Map<Proxy, Integer> proxyMap = new ConcurrentHashMap<Proxy, Integer>();
-
-	private Set<Proxy> blackList = new HashSet<Proxy>();
-
+	/**
+	 * 上次加载配置时间
+	 */
 	private long lastLoadTime = 0L;
 
 	private CloseableHttpClient httpclient = HttpClients.createDefault();
-	
+
 	private static HttpProxy instance = new HttpProxy();
+
+	private BlockingQueue<Proxy> proxyQueue = new LinkedBlockingQueue<Proxy>();
 	
+	private BlockingQueue<Proxy> blackQueue = new LinkedBlockingQueue<Proxy>();
+
 	public static HttpProxy getInstance() {
 		return instance;
 	}
 	
-	private HttpProxy() {
-		
+	private HttpProxy() {}
+
+	public void run() {
+		while(true) {
+			try {
+				load();
+				Thread.sleep(refreshInterval * 1000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
 	}
 
-	/**
-	 * @return
-	 * false not loaded
-	 * true loaded
-	 */
-	public boolean load() throws IOException, InterruptedException  {
+	public boolean load() throws IOException, InterruptedException {
+		ExecutorService threadPool = Executors.newCachedThreadPool();
 		log.debug("load proxy begin ...");
 		File file = new File(proxyFilePath);
 		if (file.lastModified() < lastLoadTime) {
@@ -90,88 +116,54 @@ public class HttpProxy implements Runnable {
 
 		lastLoadTime = System.currentTimeMillis();
 		BufferedReader br = null;
-		int count = 0;
 		try {
 			br = new BufferedReader(new FileReader(proxyFilePath));
 			String line = null;
-			proxyMap.clear();
 			while((line = br.readLine()) != null) {
 				String[] ss = line.split(":");
 				if (ss.length < 2) {
 					continue;
 				}
 				String[] pp = ss[1].split("@");
-				Proxy proxy = new Proxy(ss[0], Integer.parseInt(pp[0]));
-				if (blackList.contains(proxy.ip)) {
-					log.debug("proxy is in blacklist, proxy: " + proxy);
-					continue;
-				}
+				final Proxy proxy = new Proxy(ss[0], Integer.parseInt(pp[0]), 0);
 
-				try {
-					if (proxyMap.containsKey(proxy)) {
-						log.debug("proxy exist: " + proxy);
-						continue;
-					}
-					testSingle(proxy.ip, proxy.port);
-				} catch (ClientProtocolException e) {
-					br.close();
-					throw new ProxyException();
-				} catch (IOException e) {
-					log.debug("proxy test failed, proxy: " + proxy);
+				if (proxyQueue.contains(proxy)) {
+					log.debug("proxy exist: " + proxy);
 					continue;
 				}
-				proxyMap.put(new Proxy(ss[0], Integer.parseInt(pp[0])), 0);
-				log.debug("proxyMap add: " + proxy);
-				count ++;
+				
+				threadPool.execute(new Runnable() {
+					public void run() {
+						try {
+							testSingle(proxy.getIp(), proxy.getPort());
+							proxyQueue.put(proxy);
+							log.debug("proxyMap add: " + proxy);
+						} catch (ClientProtocolException e) {
+							throw new ProxyException();
+						} catch (IOException e) {
+							log.debug("proxy test failed, proxy, set it unreachable. proxy: " + proxy);
+							proxy.setRetryCount(maxFailCount + 1); 
+							try {
+								blackQueue.put(proxy);
+							} catch (InterruptedException e1) {
+								e1.printStackTrace();
+							}
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}
+					}
+				});
 			}
 		} finally {
 			br.close();
 		}
-		if (proxyMap.size() < minRunProxy) {
-			throw new ProxyException("proxy is not enough, size:" + proxyMap.size());
+		threadPool.awaitTermination(30, TimeUnit.DAYS);
+		if (proxyQueue.size() < minRunProxy) {
+			throw new ProxyException("proxy is not enough, size:" + proxyQueue.size());
 		}
-		blackList.clear();
-		proxyQueue.clear();
-		for (Proxy proxy: proxyMap.keySet()) {
-			proxyQueue.put(proxy);
-		}
-		log.info("load proxy successfully, count:" + count + ", map: " + proxyMap.toString());
+		int size = proxyQueue.size() + blackQueue.size();
+		log.info("load proxy successfully, count:" + size + ", available: " + proxyQueue.size());
 		return true;
-	}
-
-	public void check() throws InterruptedException {
-		log.debug("check proxy begin ...");
-		for(Proxy proxy : proxyMap.keySet()) {
-			try {
-				if (proxyMap.get(proxy) > maxFailCount) {
-					testSingle(proxy.ip, proxy.port);
-				}
-			} catch (ClientProtocolException e) {
-				throw new ProxyException(e);
-			} catch (IOException e) {
-				blackList.add(proxy);
-				proxyMap.remove(proxy);
-				log.debug("remove proxy into blacklist, proxy: " + proxy);
-			}
-		}
-
-		if (proxyMap.size() < minRunProxy) {
-			throw new ProxyException("proxy is not enough, size:" + proxyMap.size());
-		}
-
-		for(Proxy proxy : blackList) {
-			try {
-				testSingle(proxy.ip, proxy.port);
-			} catch (ClientProtocolException e) {
-				throw new ProxyException(e);
-			} catch (IOException e) {
-				blackList.remove(proxy);
-				proxyMap.put(proxy, 0);
-				proxyQueue.put(proxy);
-				log.debug("remove proxy into proxy map, proxy: " + proxy);
-			}
-		}
-		log.debug("check proxy end");
 	}
 
 	public void testSingle(String url, int port) throws ClientProtocolException, IOException {
@@ -186,9 +178,9 @@ public class HttpProxy implements Runnable {
 			httpget.setConfig(requestConfig);
 			httpget.setHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.116 Safari/537.36");
 			response = httpclient.execute(httpget);
-			
+
 			String page = EntityUtils.toString(response.getEntity(), "gbk");
-			if (!page.contains("京ICP证030173号")) {
+			if (!page.contains(succString)) {
 				//System.out.println(page);
 				throw new IOException("return wrong");
 			}
@@ -199,105 +191,25 @@ public class HttpProxy implements Runnable {
 		}
 	}
 
-	/**
-	 * get proxy
-	 * @return
-	 * String[0] ip
-	 * String[1] port
-	 */
-	public String[] getProxy() {
-		try {
-			while(true) {
-				log.info("take proxy from proxy queue, queue size: " + proxyQueue.size());
-				Proxy proxy = proxyQueue.take();
-				if (blackList.contains(proxy)) {
-					continue;
-				} else {
-					proxyQueue.put(proxy);
-					log.debug("success get proxy: " + proxy);
-					return new String[]{proxy.ip, Integer.toString(proxy.port)};
-				}
-			}	
-		} catch(InterruptedException e) {
-			throw new ProxyException(e);
+	public Proxy getProxy() throws InterruptedException {
+		Proxy proxy = null;
+		if (proxyQueue.size() < 10) {
+			proxy = blackQueue.poll(10, TimeUnit.MINUTES);
+		} else {
+			proxy = proxyQueue.poll(10, TimeUnit.MINUTES);
 		}
+		if (proxy == null) {
+			throw new ProxyException("not enough proxy");
+		}
+		log.debug("get proxy: " + proxy + ", proxy queue size: " + proxyQueue.size() + ", black queue size: " + blackQueue.size());
+		return proxy;
 	}
 
-	/**
-	 * when proxy failed, do something
-	 */
-	public void failProxy(String url, int port) {
-		Proxy proxy = new Proxy(url, port);
-		Integer failCount = proxyMap.get(proxy);
-		if (failCount != null) {
-			proxyMap.put(proxy, failCount + 1);
-		}
-	}
-
-	public void run() {
-		while(true) {
-			try {
-				boolean result = false;
-				try {
-					result = load();
-				} catch (IOException e) {
-					throw new ProxyException(e);
-				}
-				if (!result) {
-					check();
-				}
-				Thread.sleep(refreshInterval * 1000);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
-	}
-
-	private static class Proxy {
-		String ip;
-		int port;
-
-		public Proxy(String ip, int port) {
-			this.ip = ip;
-			this.port = port;
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (!(o instanceof Proxy)) {
-				return false;
-			}
-			Proxy other = (Proxy)o;
-			if ( other.ip.equals(ip) && other.port == port) {
-				return true;
-			} else {
-				return false;
-			}
-		}
-
-		@Override
-		public int hashCode() {
-			return toString().hashCode();
-		}
-
-		@Override
-		public String toString() {
-			return "proxy[ip:" + ip + ", port:" + port + "]";
-		}
-	}
-
-	public static void main(String[] args) throws InterruptedException {
-		log.info("begin to run ...");
-		HttpProxy hp = new HttpProxy();
-		new Thread(hp).start();
-		
-		Thread.sleep(10000);
-		log.info("begin to get ...");
-		while(true) {
-			String[] addr = hp.getProxy();
-			log.info("get: " + Arrays.toString(addr));
-			hp.failProxy(addr[0], Integer.parseInt(addr[1]));
-			Thread.sleep(500);
+	public void returnProxy(Proxy proxy) throws InterruptedException {
+		if (proxy.getRetryCount() > maxFailCount) {
+			blackQueue.put(proxy);
+		} else {
+			proxyQueue.put(proxy);
 		}
 	}
 
