@@ -34,6 +34,7 @@ public class TBUtil {
 
 	private static HttpProxy httpProxy = HttpProxy.getInstance();
 	private static final int RETRY_COUNT = 10;
+	private static final String blockString = "<title>亲，访问受限了</title>";
 
 	private static CloseableHttpClient httpclient = HttpClients.createDefault();
 
@@ -82,10 +83,8 @@ public class TBUtil {
 				}
 				isDone = true;
 			} catch(Exception e) {
-				proxy.setRetryCount(proxy.getRetryCount() + 1);
 				log.warn("get page failed" + e.getClass().getName());
 			} finally {
-				httpProxy.returnProxy(proxy);
 				if(response != null) {
 					response.close();
 				}
@@ -134,13 +133,9 @@ public class TBUtil {
 				} 
 				header = response.getAllHeaders();
 				isDone = true;
-				proxy.setRetryCount(0);
 			} catch(Exception e) {
-				proxy.setRetryCount(proxy.getRetryCount() + 1);
-				proxy.setLastRetryTime(System.currentTimeMillis());
 				log.warn("get page failed" + e.getClass().getName());
 			} finally {
-				httpProxy.returnProxy(proxy);
 				if(response != null) {
 					response.close();
 				}
@@ -167,12 +162,13 @@ public class TBUtil {
 		}
 	}
 
-	public static String getSingleMatchByString(String regex, String content) throws SQLException {
+	public static String getSingleMatchByString(String regex, String content) {
 		Pattern pattern = Pattern.compile(regex);
 		Matcher matcher = pattern.matcher(content);
 		if (!matcher.find()) {
 			//tbFailedPageData.insert(content);
 			//System.out.println(content);
+			HttpProxy.getInstance().setNeedCheck();
 			throw new RuntimeException("match failed, regex: " + regex);
 		}
 		return matcher.group(1).trim();

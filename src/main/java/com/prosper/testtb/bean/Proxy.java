@@ -3,21 +3,13 @@ package com.prosper.testtb.bean;
 public class Proxy {
 	private String ip;
 	private int port;
-	private int retryCount;
-	private long lastRetryTime;
-
-	public Proxy(String ip, int port, int retryCount) {
-		this.setIp(ip);
-		this.setPort(port);
-		this.setRetryCount(retryCount);
-	}
+	
+	private int testCount;
+	private int succCount;
 
 	public Proxy(String ip, int port) {
-		this(ip, port, 0);
-	}
-
-	public void increaseRetryCount() {
-		retryCount ++;
+		this.setIp(ip);
+		this.setPort(port);
 	}
 
 	@Override
@@ -32,7 +24,7 @@ public class Proxy {
 			return false;
 		}
 	}
-
+	
 	@Override
 	public int hashCode() {
 		return toString().hashCode();
@@ -40,7 +32,12 @@ public class Proxy {
 
 	@Override
 	public String toString() {
-		return "proxy[ip:" + getIp() + ", port:" + getPort() + "]";
+		if (testCount != 0) {
+			int succRate = succCount * 100 / testCount;
+			return "proxy[ip:" + getIp() + ", port:" + getPort() + ", succRate:" + succRate + "]";
+		} else {
+			return "proxy[ip:" + getIp() + ", port:" + getPort() + "]";
+		}
 	}
 
 	public String getIp() {
@@ -59,19 +56,20 @@ public class Proxy {
 		this.port = port;
 	}
 
-	public long getLastRetryTime() {
-		return lastRetryTime;
+	public int getTestCount() {
+		return testCount;
 	}
 
-	public void setLastRetryTime(long lastRetryTime) {
-		this.lastRetryTime = lastRetryTime;
-	}
-	
-	public int getRetryCount() {
-		return retryCount;
+	public void setTestCount(int testCount) {
+		this.testCount = testCount;
 	}
 
-	public void setRetryCount(int retryCount) {
-		this.retryCount = retryCount;
+	public int getSuccCount() {
+		return succCount;
 	}
+
+	public void setSuccCount(int succCount) {
+		this.succCount = succCount;
+	}
+
 }

@@ -68,7 +68,7 @@ public class Executor {
 	private void prepare() throws InterruptedException {
 		ExecutorService threadPool = Executors.newCachedThreadPool();
 		threadPool.execute(HttpProxy.getInstance());
-		Thread.sleep(40000);
+		Thread.sleep(4000000);
 		threadPool.execute(CookieRefresher.getInstance());
 	}
 	

@@ -18,6 +18,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
@@ -30,23 +32,35 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configuration;
 
 import com.prosper.testtb.bean.Proxy;
+import com.prosper.testtb.exception.BlockException;
 import com.prosper.testtb.exception.ProxyException;
 
 public class HttpProxy implements Runnable {
 
 	private static Logger log = LogManager.getLogger(HttpProxy.class); 
-	
+
 	/**
 	 * proxy文件地址
 	 */
-	private static final String proxyFilePath = "d:/proxy.txt";
+	private static final String proxyFilePath = "d:/proxy-";
+
+
+	private static final int proxyFileCount = 2;
 
 	/**
 	 * 测试地址
 	 */
-	private static final String testUrl = "http://list.taobao.com/browse/cat-0.htm";
+	private static String testUrl = "http://list.taobao.com/browse/cat-0.htm";
+	private static final String test1Url = "http://alisec.taobao.com/checkcodev3.php?apply=hesper&http_referer=http://list.taobao.com/itemlist/default.htm?json=on&cat=50003875&filter=reserve_price%5B1%2C2%5D";
+
+	/**
+	 * 最小成功率
+	 */
+	private static final int minSuccRate = 80;
 
 	/**
 	 * 测试成功时, 包含的字符串
@@ -56,7 +70,7 @@ public class HttpProxy implements Runnable {
 	/**
 	 * 被屏蔽时, 包含的字符串
 	 */
-	private static final String failedString = "";
+	private static final String blockString = "<title>亲，访问受限了</title>";
 
 	/**
 	 * 最大失败次数
@@ -71,32 +85,63 @@ public class HttpProxy implements Runnable {
 	/**
 	 * Unit: s
 	 */
-	private static final int refreshInterval = 15; 
+	private static final int refreshInterval = 1 * 60; 
+
+	private int lastProxyFileIndex = 0;
 
 	/**
-	 * 上次加载配置时间
+	 * 是否需要重新加载
 	 */
-	private long lastLoadTime = 0L;
+	private int needLoad = 1;
+
+	/**
+	 * 是否需要检查
+	 */
+	private int needCheck = 0;
+
+	/**
+	 * 是否正在加载
+	 */
+	private int isLoading = 0;
+
 
 	private CloseableHttpClient httpclient = HttpClients.createDefault();
 
 	private static HttpProxy instance = new HttpProxy();
 
-	private BlockingQueue<Proxy> proxyQueue = new LinkedBlockingQueue<Proxy>();
-	
-	private BlockingQueue<Proxy> blackQueue = new LinkedBlockingQueue<Proxy>();
+	private List<Proxy> proxyList = new ArrayList<Proxy>();
+
+	private final ReadWriteLock lock = new ReentrantReadWriteLock(); 
 
 	public static HttpProxy getInstance() {
 		return instance;
 	}
-	
+
 	private HttpProxy() {}
 
 	public void run() {
+		new Thread(new Runnable() {
+			public void run() {
+				while(true) {
+					needLoad = 1;
+					log.info("auto set need-load flag on");
+					try {
+						Thread.sleep(refreshInterval * 1000);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+			}
+		}).start();
 		while(true) {
 			try {
-				load();
-				Thread.sleep(refreshInterval * 1000);
+				if (needLoad == 1) {
+					load();
+				}
+				if (needCheck == 1) {
+					check();
+				}
+				Thread.sleep(20000);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -106,67 +151,116 @@ public class HttpProxy implements Runnable {
 	}
 
 	public boolean load() throws IOException, InterruptedException {
-		ExecutorService threadPool = Executors.newCachedThreadPool();
-		log.debug("load proxy begin ...");
-		File file = new File(proxyFilePath);
-		if (file.lastModified() < lastLoadTime) {
-			log.debug("file not modified");
-			return false;
-		}
-
-		lastLoadTime = System.currentTimeMillis();
-		BufferedReader br = null;
+		isLoading = 1;
+		lock.writeLock().lock(); 
 		try {
-			br = new BufferedReader(new FileReader(proxyFilePath));
-			String line = null;
-			while((line = br.readLine()) != null) {
-				String[] ss = line.split(":");
-				if (ss.length < 2) {
-					continue;
-				}
-				String[] pp = ss[1].split("@");
-				final Proxy proxy = new Proxy(ss[0], Integer.parseInt(pp[0]), 0);
 
-				if (proxyQueue.contains(proxy)) {
-					log.debug("proxy exist: " + proxy);
-					continue;
-				}
-				
-				threadPool.execute(new Runnable() {
-					public void run() {
-						try {
-							testSingle(proxy.getIp(), proxy.getPort());
-							proxyQueue.put(proxy);
-							log.debug("proxyMap add: " + proxy);
-						} catch (ClientProtocolException e) {
-							throw new ProxyException();
-						} catch (IOException e) {
-							log.debug("proxy test failed, proxy, set it unreachable. proxy: " + proxy);
-							proxy.setRetryCount(maxFailCount + 1); 
-							try {
-								blackQueue.put(proxy);
-							} catch (InterruptedException e1) {
-								e1.printStackTrace();
-							}
-						} catch (InterruptedException e) {
-							e.printStackTrace();
-						}
+			List<Proxy> testProxyList = new ArrayList<Proxy>();
+			this.proxyList.clear();
+			String fileName = proxyFilePath + nextProxyIndex();
+			log.debug("load proxy begin, proxy file: " + fileName);
+
+			BufferedReader br = null;
+			try {
+				br = new BufferedReader(new FileReader(fileName));
+				String line = null;
+				while((line = br.readLine()) != null) {
+					String[] ss = line.split(":");
+					if (ss.length < 2) {
+						continue;
 					}
-				});
+					String[] pp = ss[1].split("@");
+					final Proxy proxy = new Proxy(ss[0], Integer.parseInt(pp[0]));
+
+					if (testProxyList.contains(proxy)) {
+						log.debug("proxy exist: " + proxy);
+						continue;
+					}
+					testProxyList.add(proxy);
+				}
+			} finally {
+				br.close();
 			}
+
+			for (int i = 1; i <= 10; i++) {
+				ExecutorService threadPool = Executors.newCachedThreadPool();
+				log.info("test proxy, round " + i);
+				for(final Proxy proxy: testProxyList) {
+					threadPool.execute(new Runnable() {
+						public void run() {
+							try {
+								proxy.setTestCount(proxy.getTestCount() + 1);
+								testSingle(proxy.getIp(), proxy.getPort());
+								//log.debug("proxy test success, proxy: " + proxy);
+								proxy.setSuccCount(proxy.getSuccCount() + 1); 
+							} catch (ClientProtocolException e) {
+								throw new ProxyException(e);
+							} catch (Exception e) {
+								//log.debug("proxy test failed, proxy: " + proxy);
+							}
+						}
+					});	
+				}
+				threadPool.shutdown();
+				threadPool.awaitTermination(1, TimeUnit.DAYS);
+			}
+
+			for (Proxy proxy: testProxyList) {
+				if (((proxy.getSuccCount() * 100) / proxy.getTestCount()) > minSuccRate) {
+					proxyList.add(proxy);
+				}
+			}
+
+			if (proxyList.size() < minRunProxy) {
+				throw new ProxyException("proxy is not enough, size:" + proxyList.size());
+			}
+			log.info("load proxy successfully, count:" + proxyList.size() + ", proxy list:" + proxyList);
+		} catch (Exception e) {
+			e.printStackTrace();
 		} finally {
-			br.close();
+			lock.writeLock().unlock();
 		}
-		threadPool.awaitTermination(30, TimeUnit.DAYS);
-		if (proxyQueue.size() < minRunProxy) {
-			throw new ProxyException("proxy is not enough, size:" + proxyQueue.size());
-		}
-		int size = proxyQueue.size() + blackQueue.size();
-		log.info("load proxy successfully, count:" + size + ", available: " + proxyQueue.size());
+		isLoading = 0;
+		needLoad = 0;
 		return true;
 	}
 
-	public void testSingle(String url, int port) throws ClientProtocolException, IOException {
+	private void check() {
+		if (needCheck == 1) {
+			try {
+				log.info("begin to check, proxy list: " + proxyList);
+				List<Proxy> blockedProxyList = new ArrayList<Proxy>();
+				for (Proxy proxy: proxyList) {
+					try {
+						testSingle(proxy.getIp(), proxy.getPort());
+						log.debug("checking... proxy test good, proxy: " + proxy);
+					} catch (BlockException e) {
+						log.debug("checking... proxy test blocked, proxy: " + proxy);
+						blockedProxyList.add(proxy);
+					} catch (ClientProtocolException e) {
+						throw new ProxyException(e);
+					} catch (IOException e) {
+						log.debug("checking... proxy test failed, proxy: " + proxy);
+					}
+				}
+				for (Proxy proxy: blockedProxyList) {
+					proxyList.remove(proxy);
+				}
+				log.info("check done, proxy list: " + proxyList);
+			} finally {
+				needCheck = 0;
+			}
+		}
+	}
+
+	private int nextProxyIndex() {
+		if (lastProxyFileIndex >= proxyFileCount) {
+			lastProxyFileIndex = 0;
+		} 
+		return ++lastProxyFileIndex;
+	}
+
+	public void testSingle(String url, int port) throws ClientProtocolException, IOException, BlockException {
 		CloseableHttpResponse response = null;
 		try {
 			HttpGet httpget = new HttpGet(testUrl);
@@ -180,6 +274,9 @@ public class HttpProxy implements Runnable {
 			response = httpclient.execute(httpget);
 
 			String page = EntityUtils.toString(response.getEntity(), "gbk");
+			if (page.contains(blockString)) {
+				throw new BlockException();
+			}
 			if (!page.contains(succString)) {
 				//System.out.println(page);
 				throw new IOException("return wrong");
@@ -192,25 +289,48 @@ public class HttpProxy implements Runnable {
 	}
 
 	public Proxy getProxy() throws InterruptedException {
-		Proxy proxy = null;
-		if (proxyQueue.size() < 10) {
-			proxy = blackQueue.poll(10, TimeUnit.MINUTES);
-		} else {
-			proxy = proxyQueue.poll(10, TimeUnit.MINUTES);
+		while (true) {
+			if (isLoading == 1) {
+				log.info("loading proxy file, waiting ...");
+				Thread.sleep(10000);
+			}
+			lock.readLock().lock(); 
+			try {
+				int size = proxyList.size();
+				if (size < 10) {
+					log.warn("proxy size is low, set need-load flag on");
+					needLoad = 1;
+					Thread.sleep(10000);
+					continue;
+				}
+				if (size <= 0) {
+					Thread.sleep(60000);
+				}
+				Random r = new Random();
+				int index = r.nextInt(proxyList.size());
+				return proxyList.get(index); 
+			} finally { 
+				lock.readLock().unlock(); 
+			}	
 		}
-		if (proxy == null) {
-			throw new ProxyException("not enough proxy");
-		}
-		log.debug("get proxy: " + proxy + ", proxy queue size: " + proxyQueue.size() + ", black queue size: " + blackQueue.size());
-		return proxy;
 	}
 
-	public void returnProxy(Proxy proxy) throws InterruptedException {
-		if (proxy.getRetryCount() > maxFailCount) {
-			blackQueue.put(proxy);
-		} else {
-			proxyQueue.put(proxy);
+	public void removeProxy(Proxy proxy) {
+		lock.writeLock().lock();
+		try {
+			proxyList.remove(proxy);
+		} finally {
+			lock.writeLock().unlock();
 		}
+	}
+
+	public void setNeedCheck() {
+		this.needCheck = 1;
+	}
+
+	public static void main(String... args) throws InterruptedException {
+		new Thread(HttpProxy.getInstance()).start();
+		HttpProxy.getInstance().setNeedCheck();
 	}
 
 }
