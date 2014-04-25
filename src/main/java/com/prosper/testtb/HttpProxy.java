@@ -1,23 +1,14 @@
 package com.prosper.testtb;
 
 import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -32,8 +23,6 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.core.LoggerContext;
-import org.apache.logging.log4j.core.config.Configuration;
 
 import com.prosper.testtb.bean.Proxy;
 import com.prosper.testtb.exception.BlockException;
@@ -55,27 +44,29 @@ public class HttpProxy implements Runnable {
 	 * 测试地址
 	 */
 	private static String testUrl = "http://list.taobao.com/browse/cat-0.htm";
-	private static final String test1Url = "http://alisec.taobao.com/checkcodev3.php?apply=hesper&http_referer=http://list.taobao.com/itemlist/default.htm?json=on&cat=50003875&filter=reserve_price%5B1%2C2%5D";
+//	private static String testUrl = "http://www.baidu.com";
+	
 
 	/**
 	 * 最小成功率
 	 */
-	private static final int minSuccRate = 80;
+	private static final int minSuccRate = 75;
+
+	/**
+	 * 代理测试次数
+	 */
+	private static final int testCount = 50;
 
 	/**
 	 * 测试成功时, 包含的字符串
 	 */
-	private static final String succString = "<h4>女装男装</h4>";
+	private static final String succString = "B2-20080224-1";
+//	private static final String succString = "京ICP证030173号";
 
 	/**
 	 * 被屏蔽时, 包含的字符串
 	 */
 	private static final String blockString = "<title>亲，访问受限了</title>";
-
-	/**
-	 * 最大失败次数
-	 */
-	private static final int maxFailCount = 1;
 
 	/**
 	 * 最小代理运行数量
@@ -85,7 +76,7 @@ public class HttpProxy implements Runnable {
 	/**
 	 * Unit: s
 	 */
-	private static final int refreshInterval = 1 * 60; 
+	private static final int refreshInterval = 50 * 60; 
 
 	private int lastProxyFileIndex = 0;
 
@@ -103,7 +94,6 @@ public class HttpProxy implements Runnable {
 	 * 是否正在加载
 	 */
 	private int isLoading = 0;
-
 
 	private CloseableHttpClient httpclient = HttpClients.createDefault();
 
@@ -170,7 +160,7 @@ public class HttpProxy implements Runnable {
 						continue;
 					}
 					String[] pp = ss[1].split("@");
-					final Proxy proxy = new Proxy(ss[0], Integer.parseInt(pp[0]));
+					final Proxy proxy = new Proxy(ss[0].trim(), Integer.parseInt(pp[0].trim()));
 
 					if (testProxyList.contains(proxy)) {
 						log.debug("proxy exist: " + proxy);
@@ -181,32 +171,41 @@ public class HttpProxy implements Runnable {
 			} finally {
 				br.close();
 			}
+			
+			log.info("begin to test ... list size: " + testProxyList.size());
 
-			for (int i = 1; i <= 10; i++) {
-				ExecutorService threadPool = Executors.newCachedThreadPool();
+			ExecutorService threadPool = Executors.newCachedThreadPool();
+			for (int i = 1; i <= testCount; i++) {
 				log.info("test proxy, round " + i);
+				final AtomicInteger count = new AtomicInteger(testProxyList.size());
 				for(final Proxy proxy: testProxyList) {
 					threadPool.execute(new Runnable() {
 						public void run() {
 							try {
 								proxy.setTestCount(proxy.getTestCount() + 1);
 								testSingle(proxy.getIp(), proxy.getPort());
-								//log.debug("proxy test success, proxy: " + proxy);
+//								log.debug("proxy test success, proxy: " + proxy);
 								proxy.setSuccCount(proxy.getSuccCount() + 1); 
 							} catch (ClientProtocolException e) {
 								throw new ProxyException(e);
 							} catch (Exception e) {
-								//log.debug("proxy test failed, proxy: " + proxy);
+//								log.debug("proxy test failed, proxy: " + proxy);
+							} finally {
+								count.decrementAndGet();
+								//log.debug("count: " + count);
 							}
 						}
 					});	
 				}
-				threadPool.shutdown();
-				threadPool.awaitTermination(1, TimeUnit.DAYS);
+				
+				while(count.intValue() > 0) {
+					Thread.sleep(200);
+				}
 			}
+			threadPool.shutdown();
 
 			for (Proxy proxy: testProxyList) {
-				if (((proxy.getSuccCount() * 100) / proxy.getTestCount()) > minSuccRate) {
+				if (((proxy.getSuccCount() * 100) / proxy.getTestCount()) >= minSuccRate) {
 					proxyList.add(proxy);
 				}
 			}
@@ -330,7 +329,6 @@ public class HttpProxy implements Runnable {
 
 	public static void main(String... args) throws InterruptedException {
 		new Thread(HttpProxy.getInstance()).start();
-		HttpProxy.getInstance().setNeedCheck();
 	}
 
 }
